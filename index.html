@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Game Hub</title>
+<style>
+  body {
+    font-family: Arial, sans-serif;
+    background: linear-gradient(to bottom right, #0f172a, #1e293b);
+    color: #fff;
+    text-align: center;
+    margin: 0;
+    padding: 0;
+  }
+  header {
+    padding: 20px;
+    background: rgba(255,255,255,0.05);
+    font-size: 1.5rem;
+    font-weight: bold;
+  }
+  .container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    padding: 40px;
+    gap: 30px;
+  }
+  .game-card {
+    background: rgba(255,255,255,0.08);
+    border-radius: 12px;
+    width: 260px;
+    text-align: center;
+    padding: 20px;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    cursor: pointer;
+    text-decoration: none;
+    color: inherit;
+  }
+  .game-card:hover {
+    transform: translateY(-5px);
+    box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+  }
+  .game-card img {
+    width: 100%;
+    height: 160px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 15px;
+  }
+  footer {
+    padding: 15px;
+    font-size: 0.85rem;
+    opacity: 0.7;
+  }
+</style>
+</head>
+<body>
+
+<header>🎮 Welcome to the Game Hub</header>
+
+<div class="container">
+  <a href="Checkers.html" class="game-card">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/b/b8/International_draughts_board.svg" alt="Checkers Game">
+    <h3>Checkers</h3>
+    <p>Play the classic checkers board game against AI or a friend.</p>
+  </a>
+
+  <a href="DinoGame.html" class="game-card">
+    <img src="https://upload.wikimedia.org/wikipedia/commons/9/92/Google_Dinosaur_Game.png" alt="Dino Game">
+    <h3>Dino Jump</h3>
+    <p>Jump through hoops and avoid obstacles in this fun dino game.</p>
+  </a>
+</div>
+
+<footer>© 2025 Game Hub. Enjoy playing!</footer>
+
+</body>
+</html>
