@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Duck Shooter++</title>
+  <style>
+    :root{
+      --skyTop:#9fd9ff; --skyMid:#7ec7f1; --panel:#0f2740; --panelText:#e6f1ff; --btn:#1b8ae6;
+      --hudBg:#0b1d2e; --hudText:#cfe8ff; --ground:#08324a; --duck:#06d6a0; --duckHead:#1b9aaa; --beak:#ffd166; --hit:#ef476f;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{margin:0;font-family:system-ui,Segoe UI,Roboto,Arial;background:radial-gradient(1200px 60% at 50% 0%, var(--skyTop) 0, var(--skyMid) 60%, #6fb7e0 100%)}
+    #wrap{max-width:980px;margin:0 auto;padding:10px}
+    canvas{display:block;width:100%;height:auto;border-radius:16px;box-shadow:0 12px 36px rgba(0,0,0,.35)}
+    #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:10}
+    #panel{background:var(--panel);color:var(--panelText);padding:22px 26px;border-radius:14px;box-shadow:0 10px 28px rgba(0,0,0,.45);text-align:center;width:min(92%,540px)}
+    #panel h2{margin:0 0 10px;font-weight:750}
+    .btn{padding:10px 14px;border:none;border-radius:10px;font-weight:700;cursor:pointer;background:var(--btn);color:#fff}
+    #hud{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:10px;z-index:5}
+    #hud .pill{background:rgba(11,29,46,.7);color:var(--hudText);padding:6px 10px;border-radius:10px;border:1px solid rgba(255,255,255,.08)}
+  </style>
+</head>
+<body>
+  <div id="overlay" aria-hidden="false">
+    <div id="panel">
+      <h2>Duck Shooter++</h2>
+      <p>Move mouse to aim the gun & crosshair. Click or press <b>Space</b> to shoot bullets.<br/>Ducks <b>blink red</b>, then <b>fall faster</b> with a spin and disappear.</p>
+      <button id="startBtn" class="btn">Start</button>
+    </div>
+  </div>
+
+  <div id="hud">
+    <div class="pill">Score: <span id="score">0</span></div>
+    <div class="pill">Ducks: <span id="ducks">0</span></div>
+    <button id="restartBtn" class="btn" title="Restart (R)">Restart</button>
+  </div>
+
+  <div id="wrap">
+    <canvas id="game" width="1280" height="720" aria-label="Duck Shooter Canvas"></canvas>
+  </div>
+
+  <script>
+  (()=>{
+    const canvas = document.getElementById('game');
+    const ctx = canvas.getContext('2d');
+    const overlay = document.getElementById('overlay');
+    const startBtn = document.getElementById('startBtn');
+    const restartBtn = document.getElementById('restartBtn');
+    const scoreEl = document.getElementById('score');
+    const ducksEl = document.getElementById('ducks');
+
+    let running = false;
+    let ducks = [];
+    let bullets = [];
+    let score = 0;
+    const MAX_DUCKS = 7;
+
+    // Hi-DPI sizing
+    function fit(){
+      const rect = canvas.getBoundingClientRect();
+      const dpr = Math.min(window.devicePixelRatio||1, 2);
+      canvas.width = Math.floor(rect.width * dpr);
+      canvas.height = Math.floor(rect.height * dpr);
+      ctx.setTransform(dpr,0,0,dpr,0,0);
+    }
+    new ResizeObserver(fit).observe(canvas); fit();
+
+    // Pointer & gun
+    const pointer = {x: 200, y: 200};
+    canvas.addEventListener('mousemove', e=>{
+      const r = canvas.getBoundingClientRect();
+      pointer.x = e.clientX - r.left; pointer.y = e.clientY - r.top;
+    });
+    window.addEventListener('touchmove', e=>{ const t=e.touches[0]; if(!t) return; const r=canvas.getBoundingClientRect(); pointer.x=t.clientX-r.left; pointer.y=t.clientY-r.top; }, {passive:true});
+    window.addEventListener('touchstart', e=>{ if(!running) return; const t=e.touches[0]; const r=canvas.getBoundingClientRect(); pointer.x=t.clientX-r.left; pointer.y=t.clientY-r.top; fire(); }, {passive:true});
+
+    const gun = { x: ()=> canvas.clientWidth/2, y: ()=> canvas.clientHeight - 30, angle: 0, recoil: 0 };
+
+    // Duck states: 'alive' -> 'hit' (blink) -> 'fall'
+    class Duck{
+      constructor(){
+        const r = Math.random()*14 + 18;
+        this.r = r;
+        this.x = Math.random()*(canvas.clientWidth - 2*r) + r;
+        this.y = Math.random()*((canvas.clientHeight*0.7) - 2*r) + r + 20;
+        const sp = Math.random()*2 + 1.6; const ang = Math.random()*Math.PI*2;
+        this.vx = Math.cos(ang)*sp; this.vy = Math.sin(ang)*sp;
+        this.state = 'alive';
+        this.hitT = 0; // timestamp when hit
+        this.rot = 0;  // rotation while falling
+        this.rotV = 0; // angular velocity
+      }
+      update(dt){
+        const W = canvas.clientWidth; const H = canvas.clientHeight;
+        if(this.state === 'alive'){
+          this.x += this.vx * dt; this.y += this.vy * dt;
+          const top = 0, right = W, bottom = H*0.75, left = 0;
+          if(this.x - this.r < left){ this.x = left + this.r; this.vx *= -1; }
+          if(this.x + this.r > right){ this.x = right - this.r; this.vx *= -1; }
+          if(this.y - this.r < top){ this.y = top + this.r; this.vy *= -1; }
+          if(this.y + this.r > bottom){ this.y = bottom - this.r; this.vy *= -1; }
+        } else if(this.state === 'hit' || this.state === 'fall'){
+          // gravity fall (faster)
+          this.vy += 0.06 * dt; // stronger gravity
+          this.y += this.vy * dt; this.x += this.vx * 0.6 * dt;
+          this.rot += this.rotV * dt;
+          if(this.y - this.r > H + 80){ this.state = 'gone'; }
+        }
+      }
+      draw(now){
+        ctx.save(); ctx.translate(this.x, this.y); ctx.rotate(this.rot);
+        // blink effect when hit
+        let tint = null;
+        if(this.state === 'hit' || this.state === 'fall'){
+          const phase = Math.sin((now - this.hitT) * 0.025);
+          if(phase > 0){ tint = 'rgba(239,71,111,0.6)'; }
+        }
+        // body
+        ctx.fillStyle = tint || getComputedStyle(document.documentElement).getPropertyValue('--duck') || '#06d6a0';
+        ctx.beginPath(); ctx.ellipse(0,0,this.r*1.2,this.r*0.85,0,0,Math.PI*2); ctx.fill();
+
+        // head
+        ctx.fillStyle = tint ? 'rgba(239,71,111,0.8)' : '#1b9aaa';
+        ctx.beginPath(); ctx.arc(this.r*0.9,-this.r*0.2,this.r*0.45,0,Math.PI*2); ctx.fill();
+
+        // eye (better bird): white + pupil tracking pointer
+        const eyeX = this.r*1.0, eyeY = -this.r*0.25, eyeR = Math.max(3, this.r*0.18);
+        ctx.fillStyle = '#ffffff'; ctx.beginPath(); ctx.arc(eyeX, eyeY, eyeR, 0, Math.PI*2); ctx.fill();
+        // pupil position biased toward aim direction
+        const toPX = pointer.x - (this.x + eyeX), toPY = pointer.y - (this.y + eyeY);
+        const mag = Math.hypot(toPX, toPY) || 1;
+        const pupR = Math.max(1.5, eyeR*0.5);
+        const offX = (toPX/mag) * (eyeR - pupR - 0.5);
+        const offY = (toPY/mag) * (eyeR - pupR - 0.5);
+        ctx.fillStyle = '#0b1d2e'; ctx.beginPath(); ctx.arc(eyeX+offX, eyeY+offY, pupR, 0, Math.PI*2); ctx.fill();
+
+        // beak
+        ctx.fillStyle = '#ffd166';
+        ctx.beginPath(); ctx.moveTo(this.r*1.35,-this.r*0.18); ctx.lineTo(this.r*1.9,-this.r*0.08); ctx.lineTo(this.r*1.35,0.02); ctx.closePath(); ctx.fill();
+
+        // flapping wing
+        ctx.save();
+        const alive = this.state === 'alive';
+        const flap = alive ? Math.sin(now*0.02 + this.x*0.02) * 0.6 : -0.4; // flap while alive, droop when hit
+        ctx.rotate(flap);
+        ctx.fillStyle = 'rgba(0,0,0,.18)';
+        ctx.beginPath(); ctx.ellipse(-this.r*0.25, 0, this.r*0.7, this.r*0.38, -0.6, 0, Math.PI*2); ctx.fill();
+        ctx.restore();
+
+        ctx.restore();
+      }
+    }
+
+    function spawnIfNeeded(){ while(ducks.length < MAX_DUCKS) ducks.push(new Duck()); ducksEl.textContent = ducks.length; }
+
+    function startGame(){ score = 0; scoreEl.textContent = score; ducks = []; bullets = []; spawnIfNeeded(); running = true; overlay.style.display = 'none'; overlay.setAttribute('aria-hidden','true'); }
+    function restart(){ startGame(); }
+
+    function update(dt){
+      // gun
+      const dx = pointer.x - gun.x(); const dy = pointer.y - gun.y();
+      gun.angle = Math.atan2(dy, dx); gun.recoil = Math.max(0, gun.recoil - dt*0.4);
+
+      // ducks
+      for(const d of ducks) d.update(dt);
+      ducks = ducks.filter(d => d.state !== 'gone');
+      ducksEl.textContent = ducks.length;
+
+      // bullets
+      for(const b of bullets){
+        b.x += b.vx * dt; b.y += b.vy * dt; b.life -= dt;
+        if(b.x < -20 || b.x > canvas.clientWidth+20 || b.y < -20 || b.y > canvas.clientHeight+20) b.life = 0;
+      }
+      bullets = bullets.filter(b => b.life > 0);
+
+      // collisions bullet vs duck
+      for(const b of bullets){
+        for(const d of ducks){
+          if(d.state === 'alive'){
+            const dx = d.x - b.x, dy = d.y - b.y, rr = d.r + b.r;
+            if(dx*dx + dy*dy <= rr*rr){
+              // mark as hit -> fall faster
+              d.state = 'hit'; d.hitT = performance.now();
+              d.vy = Math.max(3.5, Math.abs(d.vy)) + 2.0; // stronger downward kick
+              d.vx *= 0.6; d.rotV = (Math.random() * 0.06 + 0.04) * (Math.random()<0.5?-1:1);
+              b.life = 0; score += 10; scoreEl.textContent = score;
+            }
+          }
+        }
+      }
+
+      // after brief blink, switch to fall state
+      const now = performance.now();
+      for(const d of ducks){ if(d.state === 'hit' && now - d.hitT > 400){ d.state = 'fall'; } }
+
+      spawnIfNeeded();
+    }
+
+    // Background & clouds
+    function drawBackground(t){
+      const W = canvas.clientWidth, H = canvas.clientHeight;
+      ctx.globalAlpha = .20; ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--ground') || '#08324a';
+      ctx.fillRect(0, H*0.75, W, 4); ctx.globalAlpha = 1;
+      for(let i=0;i<6;i++){
+        const cx = (i*200 + (t*0.03*i) % (W+260)) - 130; const cy = 40 + (i%3)*24; const s = 1 + (i%3)*0.25;
+        drawCloud(cx, cy, s);
+      }
+    }
+    function drawCloud(x,y,s){ ctx.save(); ctx.translate(x,y); ctx.scale(s,s); ctx.fillStyle = 'rgba(255,255,255,.85)'; rounded(0,0,120,38,18); rounded(16,-16,84,34,16); rounded(60,-8,90,32,16); ctx.restore(); }
+    function rounded(x,y,w,h,r){ ctx.beginPath(); ctx.moveTo(x+r,y); ctx.arcTo(x+w,y,x+w,y+h,r); ctx.arcTo(x+w,y+h,x,y+h,r); ctx.arcTo(x,y+h,x,y,r); ctx.arcTo(x,y,x+w,y,r); ctx.closePath(); ctx.fill(); }
+
+    function drawGun(){
+      ctx.save(); ctx.translate(gun.x(), gun.y()); ctx.rotate(gun.angle);
+      const recoilOffset = -Math.min(8, gun.recoil*10);
+      // barrel
+      ctx.fillStyle = '#c7d1db'; ctx.fillRect(0+recoilOffset, -4, 68, 8);
+      // front sight
+      ctx.fillStyle = '#e6edf5'; ctx.fillRect(52+recoilOffset, -2, 8, 4);
+      // muzzle flash
+      if(gun.recoil > 0.05){ ctx.globalAlpha = Math.min(1, gun.recoil*2); ctx.fillStyle = '#ffd166'; ctx.beginPath(); ctx.moveTo(70+recoilOffset,0); ctx.lineTo(86+recoilOffset,-6); ctx.lineTo(86+recoilOffset,6); ctx.closePath(); ctx.fill(); ctx.globalAlpha = 1; }
+      // body
+      ctx.fillStyle = '#7a8794'; ctx.fillRect(-16,-10,32,20);
+      // handle
+      ctx.rotate(0.3); ctx.fillStyle = '#566372'; ctx.fillRect(-6,10,10,22);
+      ctx.restore();
+    }
+
+    function drawBullets(){
+      ctx.save();
+      ctx.lineWidth = 2;
+      for(const b of bullets){
+        // trail
+        ctx.globalAlpha = 0.25; ctx.beginPath(); ctx.moveTo(b.x - b.vx*1.2, b.y - b.vy*1.2); ctx.lineTo(b.x, b.y); ctx.strokeStyle = '#ffffff'; ctx.stroke();
+        ctx.globalAlpha = 1; ctx.fillStyle = '#f1f5f9'; ctx.beginPath(); ctx.arc(b.x, b.y, b.r, 0, Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    }
+
+    function drawCrosshair(){
+      if(!running) return;
+      const x = pointer.x, y = pointer.y;
+      ctx.save();
+      ctx.translate(x,y);
+      // outer ring
+      ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(0,0,14,0,Math.PI*2); ctx.stroke();
+      // inner ring
+      ctx.globalAlpha = .9; ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.stroke();
+      // ticks
+      ctx.beginPath();
+      ctx.moveTo(-18,0); ctx.lineTo(-8,0);
+      ctx.moveTo(18,0); ctx.lineTo(8,0);
+      ctx.moveTo(0,-18); ctx.lineTo(0,-8);
+      ctx.moveTo(0,18); ctx.lineTo(0,8);
+      ctx.stroke();
+      ctx.restore();
+    }
+
+    function draw(now){
+      ctx.clearRect(0,0,canvas.clientWidth, canvas.clientHeight);
+      drawBackground(now*0.06);
+      for(const d of ducks) d.draw(now);
+      drawBullets();
+      drawGun();
+      drawCrosshair();
+      // In-canvas HUD fallback
+      ctx.fillStyle = '#001219'; ctx.font = '16px system-ui,Segoe UI,Arial'; ctx.fillText('Score: '+score, 12, 22);
+    }
+
+    function loop(ts){ if(running){ const dt = Math.min(3, Math.max(0.5, ts - (loop._last||ts))) / 16; loop._last = ts; update(dt); draw(ts); } requestAnimationFrame(loop); }
+
+    // Shooting: spawn bullet towards pointer (3x speed)
+    function fire(){
+      if(!running) return; gun.recoil = 0.35;
+      const speed = 45; // 3x speed
+      const gx = gun.x(), gy = gun.y(); const ang = Math.atan2(pointer.y-gy, pointer.x-gx);
+      bullets.push({ x: gx + Math.cos(ang)*30, y: gy + Math.sin(ang)*30, vx: Math.cos(ang)*speed, vy: Math.sin(ang)*speed, r: 3.2, life: 140 });
+    }
+
+    canvas.addEventListener('click', ()=>{ fire(); });
+    window.addEventListener('keydown', (e)=>{ if(e.code==='Space'){ e.preventDefault(); fire(); } if(e.key==='r' || e.key==='R') restart(); });
+
+    // Buttons
+    startBtn.addEventListener('click', startGame);
+    restartBtn.addEventListener('click', restart);
+
+    // bootstrap
+    spawnIfNeeded();
+    loop();
+  })();
+  </script>
+</body>
+</html>
