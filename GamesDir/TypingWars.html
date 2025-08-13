@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Typing Speed Game</title>
+  <style>
+    :root{
+      --bg:#0b1020;--panel:#141a2e;--ink:#eaf0ff;--muted:#99a2c7;--accent:#7aa2ff;--good:#41d392;--bad:#ff6b6b;--warn:#ffc857;
+    }
+    *{box-sizing:border-box}
+    body{margin:0;background:linear-gradient(180deg,#0b1020,#0d1426 40%,#0b1020);color:var(--ink);font-family:Inter,system-ui,Segoe UI,Roboto,Arial,sans-serif;min-height:100dvh;display:grid;place-items:center}
+    .app{width:min(1100px,94vw);}
+    header{display:flex;justify-content:space-between;align-items:center;gap:12px;margin:28px 0 16px}
+    h1{margin:0;font-size:clamp(20px,2.8vw,32px);letter-spacing:.5px}
+    .controls{display:flex;flex-wrap:wrap;gap:10px}
+    .btn{border:none;background:var(--accent);color:#fff;padding:10px 14px;border-radius:14px;font-weight:600;cursor:pointer;transition:transform .05s ease,filter .15s ease}
+    .btn:active{transform:scale(.98)}
+    .btn.secondary{background:#1f2746;color:var(--ink);border:1px solid #2b3560}
+    .btn.ghost{background:transparent;border:1px solid #2b3560;color:var(--ink)}
+    .select, .input{appearance:none;background:#101733;border:1px solid #24305b;color:var(--ink);padding:10px 12px;border-radius:12px}
+    .grid{display:grid;grid-template-columns:1.1fr .9fr;gap:18px}
+    @media (max-width:900px){.grid{grid-template-columns:1fr;}}
+
+    .panel{background:var(--panel);border:1px solid #222a4a;border-radius:18px;padding:16px 18px;box-shadow:0 6px 30px rgba(0,0,0,.25)}
+    .reference{line-height:1.9;letter-spacing:.2px;font-size:clamp(16px,1.4vw,18px);min-height:160px}
+
+    .ref-line{display:flex;flex-wrap:wrap;gap:.18em}
+    .ch{position:relative;padding:.08em .02em;border-radius:6px}
+    .ch.current{outline:2px solid var(--warn);background:#1d223b}
+    .ch.good{color:var(--good)}
+    .ch.bad{color:var(--bad);text-decoration:line-through}
+    .ch.pending{color:var(--muted)}
+    .space{opacity:.6}
+
+    .typebox{display:flex;flex-direction:column;gap:10px}
+    textarea#typed{width:100%;min-height:120px;resize:vertical;padding:12px 14px;border-radius:14px;border:1px solid #27325f;background:#0f1734;color:var(--ink);font-size:16px;line-height:1.6}
+    .typebox .helper{font-size:12px;color:var(--muted)}
+    .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-top:8px}
+    @media (max-width:560px){.stats{grid-template-columns:repeat(2,1fr)}}
+    .stat{background:#101733;border:1px solid #22305b;padding:12px;border-radius:14px}
+    .stat .label{font-size:12px;color:var(--muted)}
+    .stat .value{font-size:22px;font-weight:700;margin-top:6px}
+
+    .bar{height:10px;background:#11193a;border:1px solid #22305b;border-radius:999px;overflow:hidden}
+    .bar > i{display:block;height:100%;width:0;background:linear-gradient(90deg,var(--accent),#9ad1ff);transition:width .2s ease}
+
+    details{margin-top:10px}
+    details summary{cursor:pointer;color:var(--muted)}
+
+    .footer{display:flex;justify-content:space-between;align-items:center;margin-top:14px;color:var(--muted);font-size:12px}
+    a{color:#bcd1ff}
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>⌨️ Typing Speed Game</h1>
+      <div class="controls">
+        <select id="length" class="select" title="Passage length">
+          <option value="short">Short</option>
+          <option value="medium" selected>Medium</option>
+          <option value="long">Long</option>
+        </select>
+        <button class="btn" id="new">New Text</button>
+        <button class="btn secondary" id="restart" title="Restart current test">Restart</button>
+        <button class="btn ghost" id="customToggle">Use custom text</button>
+      </div>
+    </header>
+
+    <div class="grid">
+      <section class="panel">
+        <div class="reference" id="reference" aria-label="Reference text"></div>
+        <div class="bar" title="Progress"><i id="progress"></i></div>
+        <div class="typebox">
+          <label for="typed" class="helper">Start typing below. Timer begins on your first keystroke. You can backspace to correct mistakes.</label>
+          <textarea id="typed" placeholder="Type the text shown above here…"></textarea>
+          <details id="customWrap" hidden>
+            <summary>Custom text</summary>
+            <textarea id="custom" class="input" rows="4" placeholder="Paste or write your own text here, then click 'New Text'."></textarea>
+          </details>
+        </div>
+      </section>
+
+      <aside class="panel">
+        <div class="stats">
+          <div class="stat"><div class="label">Time</div><div class="value" id="time">0.0s</div></div>
+          <div class="stat"><div class="label">WPM</div><div class="value" id="wpm">0</div></div>
+          <div class="stat"><div class="label">Accuracy</div><div class="value" id="acc">100%</div></div>
+          <div class="stat"><div class="label">Errors</div><div class="value" id="errors">0</div></div>
+        </div>
+        <div class="stats" style="margin-top:10px">
+          <div class="stat"><div class="label">Chars/min</div><div class="value" id="cpm">0</div></div>
+          <div class="stat"><div class="label">Chars typed</div><div class="value" id="typedCount">0</div></div>
+          <div class="stat"><div class="label">Correct</div><div class="value" id="correctCount">0</div></div>
+          <div class="stat"><div class="label">Wrong</div><div class="value" id="wrongCount">0</div></div>
+        </div>
+        <details style="margin-top:12px">
+          <summary>How scoring works</summary>
+          <ul>
+            <li>WPM = (typed characters ÷ 5) ÷ minutes elapsed.</li>
+            <li>Accuracy = correct ÷ typed.</li>
+            <li>Progress bar shows how far you are into the passage.</li>
+          </ul>
+        </details>
+      </aside>
+    </div>
+
+    <div class="footer">
+      <div>Tip: Press <strong>Ctrl/Cmd + Enter</strong> to load a new passage quickly.</div>
+      <div>Made with vanilla HTML/CSS/JS. No libraries.</div>
+    </div>
+  </div>
+
+  <script>
+    const referenceEl = document.getElementById('reference');
+    const typedEl = document.getElementById('typed');
+    const lengthSel = document.getElementById('length');
+    const btnNew = document.getElementById('new');
+    const btnRestart = document.getElementById('restart');
+    const customToggle = document.getElementById('customToggle');
+    const customWrap = document.getElementById('customWrap');
+    const customText = document.getElementById('custom');
+    const progressEl = document.getElementById('progress');
+
+    const elTime = document.getElementById('time');
+    const elWPM = document.getElementById('wpm');
+    const elAcc = document.getElementById('acc');
+    const elErr = document.getElementById('errors');
+    const elCPM = document.getElementById('cpm');
+    const elTyped = document.getElementById('typedCount');
+    const elCorrect = document.getElementById('correctCount');
+    const elWrong = document.getElementById('wrongCount');
+
+    const texts = {
+      short:[
+        "Time flies like an arrow; fruit flies like a banana.",
+        "Typing tests reward rhythm and accuracy over haste.",
+        "Small steps done daily add up to big changes.",
+        "Focus on smoothness, not speed; speed follows.",
+        "Clean code is kind to the next reader: you."
+      ],
+      medium:[
+        "Practice deliberately. Aim for steady keystrokes and clear posture. Speed rises naturally when accuracy leads the way.",
+        "Great writing starts with great reading. Imitate the cadence you admire and your words will learn to sing.",
+        "Debugging is like detective work: collect clues, test hunches, and keep notes so future you can close the case faster."
+      ],
+      long:[
+        "Typing is a craft of timing and attention. When you relax your shoulders and breathe with each sentence, your fingers can trace thoughts without stumbling. Measure progress by consistency, not by record-breaking bursts. With patience, you will find flow.",
+        "Software is a conversation between humans, conducted in code. We write for readers first, computers second. Comments, naming, and structure are the punctuation marks of that dialogue, guiding comprehension at speed."
+      ]
+    };
+
+    let target = '';
+    let startedAt = null; // ms
+    let timer = null;
+
+    function chooseText(){
+      const mode = customWrap.open && customText.value.trim() ? 'custom' : lengthSel.value;
+      if(mode === 'custom'){
+        return customText.value.trim().replace(/\s+/g,' ').slice(0, 1200);
+      }
+      const pool = texts[lengthSel.value] || texts.medium;
+      return pool[Math.floor(Math.random()*pool.length)];
+    }
+
+    function renderReference(){
+      referenceEl.innerHTML = '';
+      const frag = document.createDocumentFragment();
+      const line = document.createElement('div');
+      line.className = 'ref-line';
+      for(const ch of target){
+        const span = document.createElement('span');
+        span.className = 'ch pending';
+        span.textContent = ch === ' ' ? '\u00A0' : ch; // NBSP for spaces
+        if(ch === ' ') span.classList.add('space');
+        line.appendChild(span);
+      }
+      frag.appendChild(line);
+      referenceEl.appendChild(frag);
+      highlightCurrent(0);
+    }
+
+    function resetState(newText){
+      target = newText;
+      typedEl.value = '';
+      startedAt = null;
+      clearInterval(timer); timer = null;
+      updateStats(0,0,0);
+      renderReference();
+      setProgress(0);
+      typedEl.focus();
+    }
+
+    function setProgress(pct){
+      progressEl.style.width = Math.max(0, Math.min(100, pct)) + '%';
+    }
+
+    function highlightCurrent(i){
+      const spans = referenceEl.querySelectorAll('.ch');
+      spans.forEach(s=>s.classList.remove('current'));
+      if(i < spans.length){
+        spans[i].classList.add('current');
+      }
+    }
+
+    function updatePaint(){
+      const spans = referenceEl.querySelectorAll('.ch');
+      const typed = typedEl.value;
+      let wrong = 0, correct = 0;
+      for(let i=0;i<spans.length;i++){
+        const span = spans[i];
+        const expected = target[i] ?? '';
+        const got = typed[i];
+        span.classList.remove('good','bad','pending');
+        if(got == null){
+          span.classList.add('pending');
+        } else if(got === expected){
+          span.classList.add('good');
+          correct++;
+        } else {
+          span.classList.add('bad');
+          wrong++;
+        }
+      }
+      highlightCurrent(Math.min(typed.length, spans.length-1));
+      setProgress((typed.length/target.length)*100);
+      const totalTyped = typed.length;
+      const elapsedSec = startedAt ? (Date.now()-startedAt)/1000 : 0.0001;
+      updateStats(totalTyped, correct, wrong, elapsedSec);
+      if(totalTyped >= target.length){
+        endTest();
+      }
+    }
+
+    function updateStats(totalTyped, correct, wrong, elapsedSec=0){
+      const minutes = Math.max(elapsedSec/60, 0.0001);
+      const wpm = Math.round((totalTyped/5)/minutes);
+      const cpm = Math.round(totalTyped/minutes);
+      const acc = totalTyped>0 ? Math.max(0, Math.min(100, Math.round((correct/totalTyped)*100))) : 100;
+      elTime.textContent = elapsedSec.toFixed(1)+'s';
+      elWPM.textContent = wpm.toString();
+      elCPM.textContent = cpm.toString();
+      elAcc.textContent = acc + '%';
+      elErr.textContent = wrong.toString();
+      elTyped.textContent = totalTyped.toString();
+      elCorrect.textContent = correct.toString();
+      elWrong.textContent = wrong.toString();
+    }
+
+    function tick(){
+      const elapsedSec = (Date.now()-startedAt)/1000;
+      // Recompute WPM/CPM with current typed length
+      const typed = typedEl.value.length;
+      // Count correct chars quickly by checking painted DOM
+      const correct = referenceEl.querySelectorAll('.ch.good').length;
+      const wrong = referenceEl.querySelectorAll('.ch.bad').length;
+      updateStats(typed, correct, wrong, elapsedSec);
+    }
+
+    function endTest(){
+      clearInterval(timer); timer = null;
+      typedEl.blur();
+    }
+
+    // Event wiring
+    typedEl.addEventListener('input', () => {
+      if(!startedAt && typedEl.value.length>0){
+        startedAt = Date.now();
+        timer = setInterval(tick, 100);
+      }
+      // Prevent typing beyond length; allow backspace edits
+      if(typedEl.value.length > target.length){
+        typedEl.value = typedEl.value.slice(0, target.length);
+      }
+      updatePaint();
+    });
+
+    btnRestart.addEventListener('click', () => resetState(target));
+
+    btnNew.addEventListener('click', () => resetState(chooseText()));
+
+    customToggle.addEventListener('click', () => {
+      customWrap.hidden = !customWrap.hidden;
+      customWrap.open = !customWrap.hidden;
+      customToggle.textContent = customWrap.hidden ? 'Use custom text' : 'Hide custom text';
+      if(!customWrap.hidden) customText.focus();
+    });
+
+    lengthSel.addEventListener('change', () => resetState(chooseText()));
+
+    document.addEventListener('keydown', (e)=>{
+      if((e.ctrlKey||e.metaKey) && e.key==='Enter'){
+        e.preventDefault();
+        resetState(chooseText());
+      }
+    });
+
+    // Initialize
+    resetState(chooseText());
+  </script>
+</body>
+</html>
